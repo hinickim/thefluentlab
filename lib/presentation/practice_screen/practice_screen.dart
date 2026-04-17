@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/app_export.dart';
+import '../../services/supabase_service.dart';
 import '../../services/voice_coach_service.dart';
 import '../../widgets/voice_coach_banner_widget.dart';
 import './widgets/feedback_panel_widget.dart';
@@ -31,53 +32,14 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen>
   bool _showFeedbackCoach = false;
   int _lastFeedbackScore = 0;
 
+  // Dynamic exercises fetched from Supabase
+  List<Map<String, dynamic>> _sentenceMaps = [];
+  bool _isLoadingExercises = true;
+  String? _exercisesError;
+
   late AnimationController _pageEntranceController;
   late Animation<double> _pageFadeAnimation;
   late Animation<Offset> _pageSlideAnimation;
-
-  // TODO: Replace with backend-fetched sentences
-  final List<Map<String, dynamic>> _sentenceMaps = [
-    {
-      'id': 's001',
-      'text':
-          'How much wood would a woodchuck chuck if a woodchuck could chuck wood?',
-      'difficulty': 'medium',
-      'focus': 'Consonant clusters & rhythm',
-      'category': 'tongue_twister',
-    },
-    {
-      'id': 's002',
-      'text':
-          'She sells seashells by the seashore, and the shells she sells are surely seashells.',
-      'difficulty': 'hard',
-      'focus': 'S and SH distinction',
-      'category': 'tongue_twister',
-    },
-    {
-      'id': 's003',
-      'text':
-          'The weather in Seattle was particularly pleasant last Wednesday evening.',
-      'difficulty': 'medium',
-      'focus': 'TH sound & vowel reduction',
-      'category': 'natural_speech',
-    },
-    {
-      'id': 's004',
-      'text':
-          'I would like to schedule a meeting for Thursday afternoon if that works for you.',
-      'difficulty': 'easy',
-      'focus': 'Intonation & linking words',
-      'category': 'professional',
-    },
-    {
-      'id': 's005',
-      'text':
-          'Peter Piper picked a peck of pickled peppers from the pepper patch.',
-      'difficulty': 'hard',
-      'focus': 'P consonant precision',
-      'category': 'tongue_twister',
-    },
-  ];
 
   // TODO: Replace with AI-generated feedback from backend
   final Map<String, dynamic> _mockFeedbackMap = {
@@ -110,6 +72,51 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen>
           ),
         );
     _pageEntranceController.forward();
+    _fetchExercises();
+  }
+
+  Future<void> _fetchExercises() async {
+    try {
+      setState(() {
+        _isLoadingExercises = true;
+        _exercisesError = null;
+      });
+
+      final client = SupabaseService.instance.client;
+      final response = await client
+          .from('exercises')
+          .select(
+            'id, text, difficulty, focus, exercise_categories(name, slug)',
+          )
+          .eq('is_active', true)
+          .order('created_at');
+
+      final exercises = (response as List).map((row) {
+        final category = row['exercise_categories'] as Map<String, dynamic>?;
+        return {
+          'id': row['id'] as String,
+          'text': row['text'] as String,
+          'difficulty': row['difficulty'] as String? ?? 'medium',
+          'focus': row['focus'] as String? ?? '',
+          'category': category?['slug'] as String? ?? 'general',
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _sentenceMaps = exercises;
+          _isLoadingExercises = false;
+          _currentSentenceIndex = 0;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _exercisesError = 'Failed to load exercises. Please try again.';
+          _isLoadingExercises = false;
+        });
+      }
+    }
   }
 
   @override
@@ -198,7 +205,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen>
   bool get _isTablet => MediaQuery.of(context).size.width >= 600;
 
   List<Map<String, dynamic>> get _currentCoachMessages {
-    if (_showFeedbackCoach) {
+    if (_showFeedbackCoach && _sentenceMaps.isNotEmpty) {
       final sentence = _sentenceMaps[_currentSentenceIndex];
       return VoiceCoachService.feedbackMessages(
         sentenceText: sentence['text'] as String,
@@ -215,6 +222,77 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    if (_isLoadingExercises) {
+      return Scaffold(
+        backgroundColor: AppTheme.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildGradientAppBar(theme),
+              const Expanded(
+                child: Center(
+                  child: CircularProgressIndicator(color: Color(0xFF4A90D9)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: AppNavigation(currentIndex: 0, onTap: (_) {}),
+      );
+    }
+
+    if (_exercisesError != null || _sentenceMaps.isEmpty) {
+      return Scaffold(
+        backgroundColor: AppTheme.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildGradientAppBar(theme),
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.library_books_outlined,
+                          size: 56,
+                          color: Color(0xFF4A90D9),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _exercisesError ?? 'No exercises available yet.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF6B7280),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          onPressed: _fetchExercises,
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('Retry'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A90D9),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: AppNavigation(currentIndex: 0, onTap: (_) {}),
+      );
+    }
+
     final currentSentence = _sentenceMaps[_currentSentenceIndex];
 
     return Scaffold(
