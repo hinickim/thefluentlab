@@ -625,8 +625,29 @@
         <select id="ex-category"></select>
       </div>
       <div class="form-group">
-        <label>Exercise Text *</label>
+        <label style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Exercise Text *</span>
+          <button type="button" id="ai-help-btn" onclick="aiHelpExercise()" style="
+            display:inline-flex;align-items:center;gap:6px;
+            padding:5px 12px;
+            background:linear-gradient(135deg,#6366f1,#8b5cf6);
+            color:#fff;border:none;border-radius:6px;
+            font-size:12px;font-weight:600;cursor:pointer;
+            transition:opacity 0.15s,transform 0.1s;
+            box-shadow:0 2px 6px rgba(99,102,241,0.35);
+          " onmouseover="this.style.opacity='0.88'" onmouseout="this.style.opacity='1'">
+            ✨ AI Help
+          </button>
+        </label>
         <textarea id="ex-text" placeholder="Enter the sentence or phrase for practice…" style="min-height:100px;"></textarea>
+        <!-- AI Suggestions Panel -->
+        <div id="ai-suggestions-panel" style="display:none;margin-top:10px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <span style="font-size:13px;font-weight:600;color:#5b21b6;">✨ AI Suggestions</span>
+            <button type="button" onclick="document.getElementById('ai-suggestions-panel').style.display='none'" style="background:none;border:none;cursor:pointer;color:#7c3aed;font-size:16px;line-height:1;padding:2px 4px;">✕</button>
+          </div>
+          <div id="ai-suggestions-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="form-group">
@@ -691,6 +712,27 @@ var _sbClient = null;
 var categories = [];
 var exercises = [];
 var currentUser = null;
+var LAMBDA_CHAT_URL = '';
+
+// ── Load env.json for Lambda URL ──
+fetch('../env.json')
+  .then(function(r) { return r.json(); })
+  .then(function(env) {
+    if (env && env.AWS_LAMBDA_CHAT_COMPLETION_URL) {
+      LAMBDA_CHAT_URL = env.AWS_LAMBDA_CHAT_COMPLETION_URL;
+    }
+  })
+  .catch(function() {
+    // env.json not accessible from admin subfolder; try root
+    fetch('env.json')
+      .then(function(r) { return r.json(); })
+      .then(function(env) {
+        if (env && env.AWS_LAMBDA_CHAT_COMPLETION_URL) {
+          LAMBDA_CHAT_URL = env.AWS_LAMBDA_CHAT_COMPLETION_URL;
+        }
+      })
+      .catch(function() {});
+  });
 
 // ── Supabase Library Check ──
 function getSupabaseLib() {
@@ -1217,6 +1259,96 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ── AI Help for Exercise Text ──
+function aiHelpExercise() {
+  if (!LAMBDA_CHAT_URL) {
+    toast('AI Help is not available. Lambda URL not configured.', 'error');
+    return;
+  }
+
+  var category = '';
+  var catSel = document.getElementById('ex-category');
+  if (catSel && catSel.value) {
+    var catOpt = catSel.options[catSel.selectedIndex];
+    category = catOpt ? catOpt.text : '';
+  }
+  var difficulty = document.getElementById('ex-difficulty') ? document.getElementById('ex-difficulty').value : 'medium';
+  var focus = document.getElementById('ex-focus') ? document.getElementById('ex-focus').value.trim() : '';
+
+  var btn = document.getElementById('ai-help-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+
+  var systemPrompt = 'You are an expert speech and language coach creating practice exercises for a language learning app called The Fluent Lab. Generate concise, natural-sounding sentences or phrases that are ideal for spoken practice. Each suggestion should be distinct, practical, and appropriate for the specified difficulty level.';
+
+  var userPrompt = 'Generate 5 exercise text suggestions for a speech practice app.\n' +
+    'Category: ' + (category || 'General') + '\n' +
+    'Difficulty: ' + difficulty + '\n' +
+    (focus ? 'Focus Area: ' + focus + '\n' : '') +
+    '\nReturn ONLY a numbered list (1. ... 2. ... etc.) of 5 sentences or phrases, one per line. No explanations, no extra text.';
+
+  fetch(LAMBDA_CHAT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'OPEN_AI',
+      model: 'gpt-4.1-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      stream: false,
+      parameters: { max_completion_tokens: 400 }
+    })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    btn.innerHTML = '✨ AI Help';
+
+    if (data.error) {
+      toast('AI Error: ' + (data.details || data.error), 'error');
+      return;
+    }
+
+    var content = '';
+    try {
+      content = data.choices[0].message.content || '';
+    } catch(e) {
+      toast('Could not parse AI response.', 'error');
+      return;
+    }
+
+    // Parse numbered list
+    var lines = content.split('\n').map(function(l) { return l.trim(); }).filter(function(l) {
+      return l.match(/^\d+[\.\)]\s+.+/);
+    });
+
+    if (!lines.length) {
+      toast('No suggestions returned. Try again.', 'error');
+      return;
+    }
+
+    var listEl = document.getElementById('ai-suggestions-list');
+    listEl.innerHTML = lines.map(function(line) {
+      var text = line.replace(/^\d+[\.\)]\s+/, '').trim();
+      return '<div style="display:flex;align-items:flex-start;gap:8px;background:#fff;border:1px solid #ddd6fe;border-radius:6px;padding:10px 12px;cursor:pointer;transition:background 0.12s;" ' +
+        'onclick="document.getElementById(\'ex-text\').value=' + JSON.stringify(text) + ';document.getElementById(\'ai-suggestions-panel\').style.display=\'none\';" ' +
+        'onmouseover="this.style.background=\'#ede9fe\'" onmouseout="this.style.background=\'#fff\'">' +
+        '<span style="color:#7c3aed;font-size:14px;margin-top:1px;">▶</span>' +
+        '<span style="font-size:13px;color:#1e293b;line-height:1.5;">' + escHtml(text) + '</span>' +
+        '</div>';
+    }).join('');
+
+    document.getElementById('ai-suggestions-panel').style.display = 'block';
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.innerHTML = '✨ AI Help';
+    toast('AI request failed: ' + (err.message || 'Network error'), 'error');
+  });
 }
 </script>
 </body>

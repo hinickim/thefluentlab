@@ -162,6 +162,15 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen>
     });
   }
 
+  void _onSkipSentence() {
+    setState(() {
+      _showFeedbackCoach = false;
+      _currentSentenceIndex =
+          (_currentSentenceIndex + 1) % _sentenceMaps.length;
+      _practiceState = PracticeState.idle;
+    });
+  }
+
   void _showStreakEarnedDialog() {
     showDialog(
       context: context,
@@ -272,6 +281,35 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen>
                       : [],
                   practiceState: _practiceState,
                 ),
+                if (_practiceState == PracticeState.idle ||
+                    _practiceState == PracticeState.recording)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _onSkipSentence,
+                      icon: const Icon(
+                        Icons.skip_next_rounded,
+                        size: 16,
+                        color: Color(0xFF4A90D9),
+                      ),
+                      label: const Text(
+                        'Skip',
+                        style: TextStyle(
+                          color: Color(0xFF4A90D9),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 20),
                 RecordingControlsWidget(
                   practiceState: _practiceState,
@@ -350,6 +388,35 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen>
                           : [],
                       practiceState: _practiceState,
                     ),
+                    if (_practiceState == PracticeState.idle ||
+                        _practiceState == PracticeState.recording)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _onSkipSentence,
+                          icon: const Icon(
+                            Icons.skip_next_rounded,
+                            size: 16,
+                            color: Color(0xFF4A90D9),
+                          ),
+                          label: const Text(
+                            'Skip',
+                            style: TextStyle(
+                              color: Color(0xFF4A90D9),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 4,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 24),
                     RecordingControlsWidget(
                       practiceState: _practiceState,
