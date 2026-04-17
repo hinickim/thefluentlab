@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceCoach Admin Panel</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #4A90D9;
+      --primary-dark: #3a7bc8;
+      --primary-light: #e8f2fc;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bg: #f0f4f8;
+      --surface: #ffffff;
+      --surface2: #f8fafc;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --text-light: #94a3b8;
+      --radius: 10px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Login Screen ── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .login-card {
+      background: var(--surface);
+      border-radius: 16px;
+      box-shadow: var(--shadow-md);
+      padding: 40px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .login-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .login-logo-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, #4A90D9, #9BDDFF);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .login-logo h1 { font-size: 20px; font-weight: 700; color: var(--text); }
+    .login-logo span { font-size: 12px; color: var(--text-muted); display: block; }
+    .login-card h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .login-card p { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+
+    /* ── Config Section ── */
+    .config-section {
+      background: var(--primary-light);
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .config-section h3 { font-size: 13px; font-weight: 600; color: var(--primary-dark); margin-bottom: 12px; }
+
+    /* ── Form Elements ── */
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--surface);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(74,144,217,0.15);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 10px 18px;
+      border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 500;
+      cursor: pointer; transition: all 0.15s;
+      text-decoration: none;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #16a34a; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--surface2); }
+    .btn-sm { padding: 6px 12px; font-size: 13px; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-full { width: 100%; justify-content: center; }
+
+    /* ── App Layout ── */
+    #app { display: none; min-height: 100vh; }
+
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 60px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: var(--shadow);
+    }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .topbar-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #4A90D9, #9BDDFF);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .topbar h1 { font-size: 17px; font-weight: 700; }
+    .topbar-badge {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 20px;
+    }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .user-info { font-size: 13px; color: var(--text-muted); }
+
+    .main-layout { display: flex; min-height: calc(100vh - 60px); }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px; min-width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 20px 12px;
+    }
+    .sidebar-section { margin-bottom: 24px; }
+    .sidebar-section-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-light);
+      padding: 0 8px; margin-bottom: 6px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 10px; border-radius: 8px;
+      font-size: 14px; font-weight: 500; color: var(--text-muted);
+      cursor: pointer; transition: all 0.15s;
+      margin-bottom: 2px;
+    }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { background: var(--primary-light); color: var(--primary); }
+    .nav-item .icon { font-size: 16px; }
+    .nav-badge {
+      margin-left: auto;
+      background: var(--primary);
+      color: #fff;
+      font-size: 11px; font-weight: 600;
+      padding: 1px 7px; border-radius: 20px;
+    }
+
+    /* ── Content Area ── */
+    .content { flex: 1; padding: 28px; overflow-y: auto; }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .page-header h2 { font-size: 22px; font-weight: 700; }
+    .page-header p { font-size: 14px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── Stats Cards ── */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px; margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .stat-card .stat-label { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+    .stat-card .stat-value { font-size: 28px; font-weight: 700; color: var(--text); }
+    .stat-card .stat-sub { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-header h3 { font-size: 15px; font-weight: 600; }
+    .card-body { padding: 20px; }
+
+    /* ── Table ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left; font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--text-muted); padding: 10px 16px;
+      background: var(--surface2); border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 12px 16px; font-size: 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface2); }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 500;
+    }
+    .badge-easy { background: #dcfce7; color: #15803d; }
+    .badge-medium { background: #fef9c3; color: #a16207; }
+    .badge-hard { background: #fee2e2; color: #b91c1c; }
+    .badge-active { background: #dcfce7; color: #15803d; }
+    .badge-inactive { background: #f1f5f9; color: #64748b; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45); z-index: 1000;
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      width: 100%; max-width: 560px;
+      max-height: 90vh; overflow-y: auto;
+    }
+    .modal-header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header h3 { font-size: 17px; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; cursor: pointer;
+      font-size: 20px; color: var(--text-muted); line-height: 1;
+      padding: 4px;
+    }
+    .modal-body { padding: 24px; }
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex; gap: 10px; justify-content: flex-end;
+    }
+
+    /* ── Toast ── */
+    #toast-container {
+      position: fixed; bottom: 24px; right: 24px;
+      z-index: 9999; display: flex; flex-direction: column; gap: 8px;
+    }
+    .toast {
+      padding: 12px 18px; border-radius: 10px;
+      font-size: 14px; font-weight: 500;
+      box-shadow: var(--shadow-md);
+      animation: slideIn 0.25s ease;
+      max-width: 320px;
+    }
+    .toast-success { background: #166534; color: #fff; }
+    .toast-error { background: #991b1b; color: #fff; }
+    .toast-info { background: #1e40af; color: #fff; }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* ── Misc ── */
+    .empty-state {
+      text-align: center; padding: 48px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state p { font-size: 15px; }
+
+    .search-bar {
+      display: flex; gap: 10px; align-items: center;
+      margin-bottom: 16px;
+    }
+    .search-bar input { max-width: 280px; }
+
+    .filter-row {
+      display: flex; gap: 10px; align-items: center;
+      flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .filter-row select { width: auto; min-width: 140px; }
+
+    .text-truncate {
+      max-width: 320px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .color-dot {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border-radius: 50%; margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .actions-cell { display: flex; gap: 6px; }
+
+    .loading-row td { text-align: center; color: var(--text-muted); padding: 32px; }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .content { padding: 16px; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Login Screen ── -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">🎙️</div>
+      <div>
+        <h1>VoiceCoach</h1>
+        <span>Admin Panel</span>
+      </div>
+    </div>
+
+    <div class="config-section" id="config-section">
+      <h3>⚙️ Supabase Configuration</h3>
+      <div class="form-group">
+        <label>Supabase URL</label>
+        <input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co" />
+      </div>
+      <div class="form-group">
+        <label>Anon Key (or Service Role Key)</label>
+        <input type="password" id="cfg-key" placeholder="eyJ..." />
+      </div>
+    </div>
+
+    <h2>Sign In</h2>
+    <p>Access the content management panel</p>
+
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="admin@example.com" />
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="login-password" placeholder="••••••••" />
+    </div>
+    <div id="login-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none;"></div>
+    <button class="btn btn-primary btn-full" id="login-btn" onclick="doLogin()">Sign In</button>
+
+    <p style="font-size:12px;color:var(--text-light);margin-top:16px;text-align:center;">
+      Your credentials are stored only in this browser session.
+    </p>
+  </div>
+</div>
+
+<!-- ── Main App ── -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">🎙️</div>
+      <h1>VoiceCoach Admin</h1>
+      <span class="topbar-badge">Content Manager</span>
+    </div>
+    <div class="topbar-right">
+      <span class="user-info" id="user-email-display"></span>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="main-layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Content</div>
+        <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">
+          <span class="icon">📊</span> Dashboard
+        </div>
+        <div class="nav-item" onclick="showPage('categories')" id="nav-categories">
+          <span class="icon">📁</span> Categories
+          <span class="nav-badge" id="cat-count-badge">0</span>
+        </div>
+        <div class="nav-item" onclick="showPage('exercises')" id="nav-exercises">
+          <span class="icon">🗣️</span> Exercises
+          <span class="nav-badge" id="ex-count-badge">0</span>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Content -->
+    <main class="content">
+
+      <!-- Dashboard Page -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-header">
+          <div>
+            <h2>Dashboard</h2>
+            <p>Overview of your exercise content</p>
+          </div>
+          <button class="btn btn-primary" onclick="showPage('exercises'); openAddExerciseModal()">
+            ➕ Add Exercise
+          </button>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Categories</div>
+            <div class="stat-value" id="stat-categories">—</div>
+            <div class="stat-sub">Exercise groups</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Exercises</div>
+            <div class="stat-value" id="stat-exercises">—</div>
+            <div class="stat-sub">Across all categories</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active Exercises</div>
+            <div class="stat-value" id="stat-active">—</div>
+            <div class="stat-sub">Visible in app</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Difficulty Split</div>
+            <div class="stat-value" id="stat-difficulty">—</div>
+            <div class="stat-sub">Easy / Medium / Hard</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Exercises by Category</h3>
+          </div>
+          <div class="card-body">
+            <div id="category-breakdown"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Categories Page -->
+      <div class="page" id="page-categories">
+        <div class="page-header">
+          <div>
+            <h2>Categories</h2>
+            <p>Manage exercise categories shown in the app</p>
+          </div>
+          <button class="btn btn-primary" onclick="openAddCategoryModal()">➕ Add Category</button>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Slug</th>
+                  <th>Description</th>
+                  <th>Exercises</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="categories-table-body">
+                <tr class="loading-row"><td colspan="6">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exercises Page -->
+      <div class="page" id="page-exercises">
+        <div class="page-header">
+          <div>
+            <h2>Exercises</h2>
+            <p>Add and manage practice sentences for each category</p>
+          </div>
+          <button class="btn btn-primary" onclick="openAddExerciseModal()">➕ Add Exercise</button>
+        </div>
+
+        <div class="filter-row">
+          <select id="filter-category" onchange="loadExercises()">
+            <option value="">All Categories</option>
+          </select>
+          <select id="filter-difficulty" onchange="loadExercises()">
+            <option value="">All Difficulties</option>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+          <select id="filter-status" onchange="loadExercises()">
+            <option value="">All Status</option>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+          <div style="margin-left:auto;">
+            <input type="text" id="search-exercises" placeholder="Search exercises…" style="width:220px;" oninput="loadExercises()" />
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Exercise Text</th>
+                  <th>Category</th>
+                  <th>Difficulty</th>
+                  <th>Focus</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="exercises-table-body">
+                <tr class="loading-row"><td colspan="6">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ── Category Modal ── -->
+<div class="modal-overlay" id="category-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="category-modal-title">Add Category</h3>
+      <button class="modal-close" onclick="closeModal('category-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cat-id" />
+      <div class="form-group">
+        <label>Category Name *</label>
+        <input type="text" id="cat-name" placeholder="e.g. Tongue Twisters" />
+      </div>
+      <div class="form-group">
+        <label>Slug * <small style="color:var(--text-light)">(used in app code, lowercase, underscores)</small></label>
+        <input type="text" id="cat-slug" placeholder="e.g. tongue_twister" />
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="cat-description" placeholder="Brief description shown in the app"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="form-group">
+          <label>Icon (Material icon name)</label>
+          <input type="text" id="cat-icon" placeholder="e.g. mic" />
+        </div>
+        <div class="form-group">
+          <label>Color (hex)</label>
+          <input type="color" id="cat-color" value="#4A90D9" style="height:42px;padding:4px 8px;" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Display Order</label>
+        <input type="number" id="cat-order" value="0" min="0" />
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="cat-active" checked style="width:auto;" />
+          Active (visible in app)
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('category-modal')">Cancel</button>
+      <button class="btn btn-success" onclick="saveCategory()">Save Category</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Exercise Modal ── -->
+<div class="modal-overlay" id="exercise-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="exercise-modal-title">Add Exercise</h3>
+      <button class="modal-close" onclick="closeModal('exercise-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ex-id" />
+      <div class="form-group">
+        <label>Category *</label>
+        <select id="ex-category"></select>
+      </div>
+      <div class="form-group">
+        <label>Exercise Text *</label>
+        <textarea id="ex-text" placeholder="Enter the sentence or phrase for practice…" style="min-height:100px;"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="form-group">
+          <label>Difficulty *</label>
+          <select id="ex-difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Display Order</label>
+          <input type="number" id="ex-order" value="0" min="0" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Focus Area <small style="color:var(--text-light)">(what skill this targets)</small></label>
+        <input type="text" id="ex-focus" placeholder="e.g. S and SH distinction" />
+      </div>
+      <div class="form-group">
+        <label>Tags <small style="color:var(--text-light)">(comma-separated)</small></label>
+        <input type="text" id="ex-tags" placeholder="e.g. s-sound, sh-sound, classic" />
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="ex-active" checked style="width:auto;" />
+          Active (visible in app)
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('exercise-modal')">Cancel</button>
+      <button class="btn btn-success" onclick="saveExercise()">Save Exercise</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Confirm Modal ── -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-header">
+      <h3>Confirm Delete</h3>
+      <button class="modal-close" onclick="closeModal('delete-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="delete-message" style="font-size:15px;color:var(--text-muted);"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('delete-modal')">Cancel</button>
+      <button class="btn btn-danger" id="delete-confirm-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast Container ── -->
+<div id="toast-container"></div>
+
+<script>
+// ── State ──
+let supabase = null;
+let categories = [];
+let exercises = [];
+let currentUser = null;
+
+// ── Init ──
+window.addEventListener('DOMContentLoaded', () => {
+  const savedUrl = localStorage.getItem('vc_admin_url') || '';
+  const savedKey = localStorage.getItem('vc_admin_key') || '';
+  if (savedUrl) document.getElementById('cfg-url').value = savedUrl;
+  if (savedKey) document.getElementById('cfg-key').value = savedKey;
+
+  // Auto-login if session exists
+  if (savedUrl && savedKey) {
+    initSupabase(savedUrl, savedKey);
+    checkSession();
+  }
+});
+
+function initSupabase(url, key) {
+  supabase = window.supabase.createClient(url, key);
+}
+
+async function checkSession() {
+  if (!supabase) return;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      currentUser = session.user;
+      showApp();
+    }
+  } catch (e) {}
+}
+
+// ── Auth ──
+async function doLogin() {
+  const url = document.getElementById('cfg-url').value.trim();
+  const key = document.getElementById('cfg-key').value.trim();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+
+  errEl.style.display = 'none';
+
+  if (!url || !key) { showError(errEl, 'Please enter your Supabase URL and key.'); return; }
+  if (!email || !password) { showError(errEl, 'Please enter your email and password.'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+
+  try {
+    initSupabase(url, key);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+
+    localStorage.setItem('vc_admin_url', url);
+    localStorage.setItem('vc_admin_key', key);
+    currentUser = data.user;
+    showApp();
+  } catch (err) {
+    showError(errEl, err.message || 'Sign in failed. Check your credentials.');
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+}
+
+function showError(el, msg) {
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function doLogout() {
+  if (supabase) await supabase.auth.signOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  currentUser = null;
+}
+
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('user-email-display').textContent = currentUser?.email || '';
+  loadAll();
+}
+
+// ── Navigation ──
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('nav-' + page).classList.add('active');
+}
+
+// ── Load Data ──
+async function loadAll() {
+  await Promise.all([loadCategories(), loadExercises()]);
+  updateDashboard();
+}
+
+async function loadCategories() {
+  try {
+    const { data, error } = await supabase
+      .from('exercise_categories')
+      .select('*, exercises(count)')
+      .order('display_order', { ascending: true });
+
+    if (error) throw error;
+    categories = data || [];
+    renderCategoriesTable();
+    updateCategorySelects();
+    document.getElementById('cat-count-badge').textContent = categories.length;
+  } catch (err) {
+    toast('Failed to load categories: ' + err.message, 'error');
+  }
+}
+
+async function loadExercises() {
+  try {
+    const catFilter = document.getElementById('filter-category')?.value;
+    const diffFilter = document.getElementById('filter-difficulty')?.value;
+    const statusFilter = document.getElementById('filter-status')?.value;
+    const searchVal = document.getElementById('search-exercises')?.value?.toLowerCase();
+
+    let query = supabase
+      .from('exercises')
+      .select('*, exercise_categories(name, color)')
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    if (catFilter) query = query.eq('category_id', catFilter);
+    if (diffFilter) query = query.eq('difficulty', diffFilter);
+    if (statusFilter !== '') query = query.eq('is_active', statusFilter === 'true');
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    let result = data || [];
+    if (searchVal) {
+      result = result.filter(e =>
+        e.text.toLowerCase().includes(searchVal) ||
+        (e.focus || '').toLowerCase().includes(searchVal)
+      );
+    }
+
+    exercises = result;
+    renderExercisesTable();
+    document.getElementById('ex-count-badge').textContent = exercises.length;
+  } catch (err) {
+    toast('Failed to load exercises: ' + err.message, 'error');
+  }
+}
+
+// ── Render Tables ──
+function renderCategoriesTable() {
+  const tbody = document.getElementById('categories-table-body');
+  if (!categories.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📁</div><p>No categories yet. Add your first category.</p></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = categories.map(cat => {
+    const count = cat.exercises?.[0]?.count ?? 0;
+    return `
+      <tr>
+        <td>
+          <span class="color-dot" style="background:${escHtml(cat.color || '#4A90D9')}"></span>
+          <strong>${escHtml(cat.name)}</strong>
+        </td>
+        <td><code style="font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:4px;">${escHtml(cat.slug)}</code></td>
+        <td class="text-truncate" style="max-width:200px;">${escHtml(cat.description || '—')}</td>
+        <td><strong>${count}</strong></td>
+        <td><span class="badge ${cat.is_active ? 'badge-active' : 'badge-inactive'}">${cat.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td>
+          <div class="actions-cell">
+            <button class="btn btn-ghost btn-sm" onclick="editCategory('${cat.id}')">✏️ Edit</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="confirmDelete('category','${cat.id}','${escHtml(cat.name)}')">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderExercisesTable() {
+  const tbody = document.getElementById('exercises-table-body');
+  if (!exercises.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🗣️</div><p>No exercises found. Add your first exercise.</p></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = exercises.map(ex => {
+    const catName = ex.exercise_categories?.name || '—';
+    const catColor = ex.exercise_categories?.color || '#4A90D9';
+    return `
+      <tr>
+        <td class="text-truncate">${escHtml(ex.text)}</td>
+        <td><span class="color-dot" style="background:${escHtml(catColor)}"></span>${escHtml(catName)}</td>
+        <td><span class="badge badge-${ex.difficulty}">${ex.difficulty}</span></td>
+        <td style="color:var(--text-muted);font-size:13px;">${escHtml(ex.focus || '—')}</td>
+        <td><span class="badge ${ex.is_active ? 'badge-active' : 'badge-inactive'}">${ex.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td>
+          <div class="actions-cell">
+            <button class="btn btn-ghost btn-sm" onclick="editExercise('${ex.id}')">✏️ Edit</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="confirmDelete('exercise','${ex.id}','exercise')">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function updateCategorySelects() {
+  const filterSel = document.getElementById('filter-category');
+  const exSel = document.getElementById('ex-category');
+
+  const opts = categories.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+
+  if (filterSel) {
+    const cur = filterSel.value;
+    filterSel.innerHTML = '<option value="">All Categories</option>' + opts;
+    filterSel.value = cur;
+  }
+  if (exSel) {
+    const cur = exSel.value;
+    exSel.innerHTML = '<option value="">Select category…</option>' + opts;
+    if (cur) exSel.value = cur;
+  }
+}
+
+// ── Dashboard ──
+function updateDashboard() {
+  const total = exercises.length;
+  const active = exercises.filter(e => e.is_active).length;
+  const easy = exercises.filter(e => e.difficulty === 'easy').length;
+  const medium = exercises.filter(e => e.difficulty === 'medium').length;
+  const hard = exercises.filter(e => e.difficulty === 'hard').length;
+
+  document.getElementById('stat-categories').textContent = categories.length;
+  document.getElementById('stat-exercises').textContent = total;
+  document.getElementById('stat-active').textContent = active;
+  document.getElementById('stat-difficulty').textContent = `${easy} / ${medium} / ${hard}`;
+
+  const breakdown = document.getElementById('category-breakdown');
+  if (!categories.length) {
+    breakdown.innerHTML = '<p style="color:var(--text-muted);font-size:14px;">No categories yet.</p>';
+    return;
+  }
+
+  breakdown.innerHTML = categories.map(cat => {
+    const count = exercises.filter(e => e.category_id === cat.id).length;
+    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    return `
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:14px;font-weight:500;">
+            <span class="color-dot" style="background:${escHtml(cat.color || '#4A90D9')}"></span>
+            ${escHtml(cat.name)}
+          </span>
+          <span style="font-size:13px;color:var(--text-muted);">${count} exercises</span>
+        </div>
+        <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;">
+          <div style="background:${escHtml(cat.color || '#4A90D9')};height:100%;width:${pct}%;border-radius:4px;transition:width 0.4s;"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Category CRUD ──
+function openAddCategoryModal() {
+  document.getElementById('category-modal-title').textContent = 'Add Category';
+  document.getElementById('cat-id').value = '';
+  document.getElementById('cat-name').value = '';
+  document.getElementById('cat-slug').value = '';
+  document.getElementById('cat-description').value = '';
+  document.getElementById('cat-icon').value = 'mic';
+  document.getElementById('cat-color').value = '#4A90D9';
+  document.getElementById('cat-order').value = '0';
+  document.getElementById('cat-active').checked = true;
+  openModal('category-modal');
+}
+
+function editCategory(id) {
+  const cat = categories.find(c => c.id === id);
+  if (!cat) return;
+  document.getElementById('category-modal-title').textContent = 'Edit Category';
+  document.getElementById('cat-id').value = cat.id;
+  document.getElementById('cat-name').value = cat.name;
+  document.getElementById('cat-slug').value = cat.slug;
+  document.getElementById('cat-description').value = cat.description || '';
+  document.getElementById('cat-icon').value = cat.icon || 'mic';
+  document.getElementById('cat-color').value = cat.color || '#4A90D9';
+  document.getElementById('cat-order').value = cat.display_order || 0;
+  document.getElementById('cat-active').checked = cat.is_active;
+  openModal('category-modal');
+}
+
+async function saveCategory() {
+  const id = document.getElementById('cat-id').value;
+  const name = document.getElementById('cat-name').value.trim();
+  const slug = document.getElementById('cat-slug').value.trim();
+
+  if (!name || !slug) { toast('Name and slug are required.', 'error'); return; }
+
+  const payload = {
+    name,
+    slug,
+    description: document.getElementById('cat-description').value.trim() || null,
+    icon: document.getElementById('cat-icon').value.trim() || 'mic',
+    color: document.getElementById('cat-color').value,
+    display_order: parseInt(document.getElementById('cat-order').value) || 0,
+    is_active: document.getElementById('cat-active').checked,
+  };
+
+  try {
+    let error;
+    if (id) {
+      ({ error } = await supabase.from('exercise_categories').update(payload).eq('id', id));
+    } else {
+      ({ error } = await supabase.from('exercise_categories').insert(payload));
+    }
+    if (error) throw error;
+    toast(id ? 'Category updated!' : 'Category added!', 'success');
+    closeModal('category-modal');
+    await loadAll();
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+// ── Exercise CRUD ──
+function openAddExerciseModal() {
+  document.getElementById('exercise-modal-title').textContent = 'Add Exercise';
+  document.getElementById('ex-id').value = '';
+  document.getElementById('ex-text').value = '';
+  document.getElementById('ex-difficulty').value = 'medium';
+  document.getElementById('ex-focus').value = '';
+  document.getElementById('ex-tags').value = '';
+  document.getElementById('ex-order').value = '0';
+  document.getElementById('ex-active').checked = true;
+  updateCategorySelects();
+  openModal('exercise-modal');
+}
+
+function editExercise(id) {
+  const ex = exercises.find(e => e.id === id);
+  if (!ex) return;
+  document.getElementById('exercise-modal-title').textContent = 'Edit Exercise';
+  document.getElementById('ex-id').value = ex.id;
+  document.getElementById('ex-text').value = ex.text;
+  document.getElementById('ex-difficulty').value = ex.difficulty;
+  document.getElementById('ex-focus').value = ex.focus || '';
+  document.getElementById('ex-tags').value = (ex.tags || []).join(', ');
+  document.getElementById('ex-order').value = ex.display_order || 0;
+  document.getElementById('ex-active').checked = ex.is_active;
+  updateCategorySelects();
+  setTimeout(() => {
+    document.getElementById('ex-category').value = ex.category_id;
+  }, 50);
+  openModal('exercise-modal');
+}
+
+async function saveExercise() {
+  const id = document.getElementById('ex-id').value;
+  const text = document.getElementById('ex-text').value.trim();
+  const categoryId = document.getElementById('ex-category').value;
+
+  if (!text) { toast('Exercise text is required.', 'error'); return; }
+  if (!categoryId) { toast('Please select a category.', 'error'); return; }
+
+  const tagsRaw = document.getElementById('ex-tags').value.trim();
+  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  const payload = {
+    category_id: categoryId,
+    text,
+    difficulty: document.getElementById('ex-difficulty').value,
+    focus: document.getElementById('ex-focus').value.trim() || null,
+    tags: tags.length ? tags : null,
+    display_order: parseInt(document.getElementById('ex-order').value) || 0,
+    is_active: document.getElementById('ex-active').checked,
+  };
+
+  try {
+    let error;
+    if (id) {
+      ({ error } = await supabase.from('exercises').update(payload).eq('id', id));
+    } else {
+      ({ error } = await supabase.from('exercises').insert(payload));
+    }
+    if (error) throw error;
+    toast(id ? 'Exercise updated!' : 'Exercise added!', 'success');
+    closeModal('exercise-modal');
+    await loadAll();
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+// ── Delete ──
+function confirmDelete(type, id, label) {
+  document.getElementById('delete-message').textContent =
+    `Are you sure you want to delete "${label}"? This cannot be undone.`;
+  const btn = document.getElementById('delete-confirm-btn');
+  btn.onclick = () => doDelete(type, id);
+  openModal('delete-modal');
+}
+
+async function doDelete(type, id) {
+  try {
+    const table = type === 'category' ? 'exercise_categories' : 'exercises';
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) throw error;
+    toast(`${type === 'category' ? 'Category' : 'Exercise'} deleted.`, 'success');
+    closeModal('delete-modal');
+    await loadAll();
+  } catch (err) {
+    toast('Delete failed: ' + err.message, 'error');
+  }
+}
+
+// ── Auto-slug ──
+document.addEventListener('DOMContentLoaded', () => {
+  const nameInput = document.getElementById('cat-name');
+  const slugInput = document.getElementById('cat-slug');
+  if (nameInput && slugInput) {
+    nameInput.addEventListener('input', () => {
+      if (!document.getElementById('cat-id').value) {
+        slugInput.value = nameInput.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      }
+    });
+  }
+});
+
+// ── Modal Helpers ──
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ── Toast ──
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── Util ──
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Enter key on login
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') {
+    doLogin();
+  }
+});
+</script>
+</body>
+</html>
