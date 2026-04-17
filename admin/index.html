@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VoiceCoach Admin Panel</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -367,11 +367,11 @@
       <h3>⚙️ Supabase Configuration</h3>
       <div class="form-group">
         <label>Supabase URL</label>
-        <input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co" />
+        <input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co" autocomplete="off" />
       </div>
       <div class="form-group">
         <label>Anon Key (or Service Role Key)</label>
-        <input type="password" id="cfg-key" placeholder="eyJ..." />
+        <input type="password" id="cfg-key" placeholder="eyJ..." autocomplete="off" />
       </div>
     </div>
 
@@ -380,13 +380,13 @@
 
     <div class="form-group">
       <label>Email</label>
-      <input type="email" id="login-email" placeholder="admin@example.com" />
+      <input type="email" id="login-email" placeholder="admin@example.com" autocomplete="email" />
     </div>
     <div class="form-group">
       <label>Password</label>
-      <input type="password" id="login-password" placeholder="••••••••" />
+      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" />
     </div>
-    <div id="login-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none;"></div>
+    <div id="login-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;padding:10px;background:#fef2f2;border-radius:8px;display:none;"></div>
     <button class="btn btn-primary btn-full" id="login-btn" onclick="doLogin()">Sign In</button>
 
     <p style="font-size:12px;color:var(--text-light);margin-top:16px;text-align:center;">
@@ -686,287 +686,359 @@
 
 <script>
 // ── State ──
-let supabase = null;
-let categories = [];
-let exercises = [];
-let currentUser = null;
+// Use _sbClient to avoid naming conflict with window.supabase (the library namespace)
+var _sbClient = null;
+var categories = [];
+var exercises = [];
+var currentUser = null;
+
+// ── Supabase Library Check ──
+function getSupabaseLib() {
+  // The UMD build exposes createClient directly on window.supabase
+  if (window.supabase && typeof window.supabase.createClient === 'function') {
+    return window.supabase;
+  }
+  // Fallback: some builds expose it differently
+  if (window.supabaseJs && typeof window.supabaseJs.createClient === 'function') {
+    return window.supabaseJs;
+  }
+  return null;
+}
+
+function createClient(url, key) {
+  var lib = getSupabaseLib();
+  if (!lib) {
+    throw new Error('Supabase library failed to load. Please check your internet connection and refresh.');
+  }
+  return lib.createClient(url, key);
+}
 
 // ── Init ──
-window.addEventListener('DOMContentLoaded', async () => {
-  // Try to load credentials from env.json first
-  let envUrl = '';
-  let envKey = '';
-  try {
-    const res = await fetch('../env.json');
-    if (res.ok) {
-      const env = await res.json();
-      envUrl = env.SUPABASE_URL || '';
-      envKey = env.SUPABASE_ANON_KEY || '';
-    }
-  } catch (e) {}
-
-  const savedUrl = localStorage.getItem('vc_admin_url') || envUrl;
-  const savedKey = localStorage.getItem('vc_admin_key') || envKey;
+window.addEventListener('DOMContentLoaded', function() {
+  // Restore saved credentials from localStorage (session only)
+  var savedUrl = sessionStorage.getItem('vc_admin_url') || localStorage.getItem('vc_admin_url') || '';
+  var savedKey = sessionStorage.getItem('vc_admin_key') || localStorage.getItem('vc_admin_key') || '';
 
   if (savedUrl) document.getElementById('cfg-url').value = savedUrl;
   if (savedKey) document.getElementById('cfg-key').value = savedKey;
 
-  // Hide config section if credentials are auto-loaded
+  // Auto-slug on category name input
+  var nameInput = document.getElementById('cat-name');
+  var slugInput = document.getElementById('cat-slug');
+  if (nameInput && slugInput) {
+    nameInput.addEventListener('input', function() {
+      if (!document.getElementById('cat-id').value) {
+        slugInput.value = nameInput.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      }
+    });
+  }
+
+  // Enter key triggers login
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      var loginScreen = document.getElementById('login-screen');
+      if (loginScreen && loginScreen.style.display !== 'none') {
+        doLogin();
+      }
+    }
+  });
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) overlay.classList.remove('open');
+    });
+  });
+
+  // If we have saved credentials, try to restore session
   if (savedUrl && savedKey) {
-    const cfgSection = document.getElementById('config-section');
-    if (cfgSection) cfgSection.style.display = 'none';
-    initSupabase(savedUrl, savedKey);
-    checkSession();
+    try {
+      _sbClient = createClient(savedUrl, savedKey);
+      checkSession();
+    } catch(e) {
+      // Library not ready yet, ignore
+    }
   }
 });
 
-function initSupabase(url, key) {
-  supabase = window.supabase.createClient(url, key);
-}
-
-async function checkSession() {
-  if (!supabase) return;
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
+function checkSession() {
+  if (!_sbClient) return;
+  _sbClient.auth.getSession().then(function(result) {
+    var session = result.data && result.data.session;
     if (session) {
       currentUser = session.user;
       showApp();
     }
-  } catch (e) {}
+  }).catch(function() {});
 }
 
 // ── Auth ──
-async function doLogin() {
-  const url = document.getElementById('cfg-url').value.trim();
-  const key = document.getElementById('cfg-key').value.trim();
-  const email = document.getElementById('login-email').value.trim();
-  const password = document.getElementById('login-password').value;
-  const errEl = document.getElementById('login-error');
-  const btn = document.getElementById('login-btn');
+function doLogin() {
+  var urlInput = document.getElementById('cfg-url');
+  var keyInput = document.getElementById('cfg-key');
+  var emailInput = document.getElementById('login-email');
+  var passwordInput = document.getElementById('login-password');
+  var errEl = document.getElementById('login-error');
+  var btn = document.getElementById('login-btn');
+
+  var url = urlInput ? urlInput.value.trim() : '';
+  var key = keyInput ? keyInput.value.trim() : '';
+  var email = emailInput ? emailInput.value.trim() : '';
+  var password = passwordInput ? passwordInput.value : '';
 
   errEl.style.display = 'none';
 
-  if (!url || !key) { showError(errEl, 'Please enter your Supabase URL and key.'); return; }
-  if (!email || !password) { showError(errEl, 'Please enter your email and password.'); return; }
+  // Validate inputs
+  if (!url) { showLoginError('Please enter your Supabase URL.'); return; }
+  if (!key) { showLoginError('Please enter your Supabase Anon Key.'); return; }
+  if (!email) { showLoginError('Please enter your email address.'); return; }
+  if (!password) { showLoginError('Please enter your password.'); return; }
+
+  // Validate URL format
+  if (!url.startsWith('https://') || !url.includes('supabase')) {
+    showLoginError('Supabase URL should start with https:// and contain supabase.co'); return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Signing in…';
 
+  // Create Supabase client
   try {
-    initSupabase(url, key);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-
-    localStorage.setItem('vc_admin_url', url);
-    localStorage.setItem('vc_admin_key', key);
-    currentUser = data.user;
-    showApp();
-  } catch (err) {
-    showError(errEl, err.message || 'Sign in failed. Check your credentials.');
+    _sbClient = createClient(url, key);
+  } catch(e) {
+    showLoginError(e.message || 'Failed to initialize Supabase. Refresh the page and try again.');
     btn.disabled = false;
     btn.textContent = 'Sign In';
+    return;
   }
+
+  // Attempt sign in
+  _sbClient.auth.signInWithPassword({ email: email, password: password })
+    .then(function(result) {
+      var data = result.data;
+      var error = result.error;
+
+      if (error) {
+        var msg = error.message || 'Sign in failed.';
+        if (msg.toLowerCase().includes('invalid login')) {
+          msg = 'Invalid email or password. Please check your credentials.';
+        } else if (msg.toLowerCase().includes('email not confirmed')) {
+          msg = 'Email not confirmed. Please verify your email address first.';
+        }
+        showLoginError(msg);
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+        return;
+      }
+
+      if (!data || !data.user) {
+        showLoginError('Sign in failed. No user returned. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+        return;
+      }
+
+      // Save credentials
+      localStorage.setItem('vc_admin_url', url);
+      localStorage.setItem('vc_admin_key', key);
+      sessionStorage.setItem('vc_admin_url', url);
+      sessionStorage.setItem('vc_admin_key', key);
+
+      currentUser = data.user;
+      showApp();
+    })
+    .catch(function(err) {
+      showLoginError(err.message || 'An unexpected error occurred. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    });
 }
 
-function showError(el, msg) {
-  el.textContent = msg;
-  el.style.display = 'block';
+function showLoginError(msg) {
+  var errEl = document.getElementById('login-error');
+  errEl.textContent = msg;
+  errEl.style.display = 'block';
 }
 
-async function doLogout() {
-  if (supabase) await supabase.auth.signOut();
+function doLogout() {
+  if (_sbClient) {
+    _sbClient.auth.signOut().catch(function() {});
+  }
+  _sbClient = null;
+  currentUser = null;
+  sessionStorage.removeItem('vc_admin_url');
+  sessionStorage.removeItem('vc_admin_key');
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
-  currentUser = null;
+  document.getElementById('login-btn').disabled = false;
+  document.getElementById('login-btn').textContent = 'Sign In';
 }
 
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  document.getElementById('user-email-display').textContent = currentUser?.email || '';
+  document.getElementById('user-email-display').textContent = currentUser ? currentUser.email : '';
   loadAll();
 }
 
 // ── Navigation ──
 function showPage(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
   document.getElementById('page-' + page).classList.add('active');
   document.getElementById('nav-' + page).classList.add('active');
 }
 
 // ── Load Data ──
-async function loadAll() {
-  await Promise.all([loadCategories(), loadExercises()]);
-  updateDashboard();
+function loadAll() {
+  Promise.all([loadCategories(), loadExercises()]).then(function() {
+    updateDashboard();
+  });
 }
 
-async function loadCategories() {
-  try {
-    const { data, error } = await supabase
-      .from('exercise_categories')
-      .select('*, exercises(count)')
-      .order('display_order', { ascending: true });
-
-    if (error) throw error;
-    categories = data || [];
-    renderCategoriesTable();
-    updateCategorySelects();
-    document.getElementById('cat-count-badge').textContent = categories.length;
-  } catch (err) {
-    toast('Failed to load categories: ' + err.message, 'error');
-  }
+function loadCategories() {
+  return _sbClient
+    .from('exercise_categories')
+    .select('*, exercises(count)')
+    .order('display_order', { ascending: true })
+    .then(function(result) {
+      if (result.error) throw result.error;
+      categories = result.data || [];
+      renderCategoriesTable();
+      updateCategorySelects();
+      document.getElementById('cat-count-badge').textContent = categories.length;
+    })
+    .catch(function(err) {
+      toast('Failed to load categories: ' + err.message, 'error');
+    });
 }
 
-async function loadExercises() {
-  try {
-    const catFilter = document.getElementById('filter-category')?.value;
-    const diffFilter = document.getElementById('filter-difficulty')?.value;
-    const statusFilter = document.getElementById('filter-status')?.value;
-    const searchVal = document.getElementById('search-exercises')?.value?.toLowerCase();
+function loadExercises() {
+  var catFilter = document.getElementById('filter-category') ? document.getElementById('filter-category').value : '';
+  var diffFilter = document.getElementById('filter-difficulty') ? document.getElementById('filter-difficulty').value : '';
+  var statusFilter = document.getElementById('filter-status') ? document.getElementById('filter-status').value : '';
+  var searchVal = document.getElementById('search-exercises') ? (document.getElementById('search-exercises').value || '').toLowerCase() : '';
 
-    let query = supabase
-      .from('exercises')
-      .select('*, exercise_categories(name, color)')
-      .order('display_order', { ascending: true })
-      .order('created_at', { ascending: false });
+  var query = _sbClient
+    .from('exercises')
+    .select('*, exercise_categories(name, color)')
+    .order('display_order', { ascending: true })
+    .order('created_at', { ascending: false });
 
-    if (catFilter) query = query.eq('category_id', catFilter);
-    if (diffFilter) query = query.eq('difficulty', diffFilter);
-    if (statusFilter !== '') query = query.eq('is_active', statusFilter === 'true');
+  if (catFilter) query = query.eq('category_id', catFilter);
+  if (diffFilter) query = query.eq('difficulty', diffFilter);
+  if (statusFilter !== '') query = query.eq('is_active', statusFilter === 'true');
 
-    const { data, error } = await query;
-    if (error) throw error;
-
-    let result = data || [];
+  return query.then(function(result) {
+    if (result.error) throw result.error;
+    var data = result.data || [];
     if (searchVal) {
-      result = result.filter(e =>
-        e.text.toLowerCase().includes(searchVal) ||
-        (e.focus || '').toLowerCase().includes(searchVal)
-      );
+      data = data.filter(function(e) {
+        return e.text.toLowerCase().includes(searchVal) || (e.focus || '').toLowerCase().includes(searchVal);
+      });
     }
-
-    exercises = result;
+    exercises = data;
     renderExercisesTable();
     document.getElementById('ex-count-badge').textContent = exercises.length;
-  } catch (err) {
+  }).catch(function(err) {
     toast('Failed to load exercises: ' + err.message, 'error');
-  }
+  });
 }
 
 // ── Render Tables ──
 function renderCategoriesTable() {
-  const tbody = document.getElementById('categories-table-body');
+  var tbody = document.getElementById('categories-table-body');
   if (!categories.length) {
     tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📁</div><p>No categories yet. Add your first category.</p></div></td></tr>';
     return;
   }
-
-  tbody.innerHTML = categories.map(cat => {
-    const count = cat.exercises?.[0]?.count ?? 0;
-    return `
-      <tr>
-        <td>
-          <span class="color-dot" style="background:${escHtml(cat.color || '#4A90D9')}"></span>
-          <strong>${escHtml(cat.name)}</strong>
-        </td>
-        <td><code style="font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:4px;">${escHtml(cat.slug)}</code></td>
-        <td class="text-truncate" style="max-width:200px;">${escHtml(cat.description || '—')}</td>
-        <td><strong>${count}</strong></td>
-        <td><span class="badge ${cat.is_active ? 'badge-active' : 'badge-inactive'}">${cat.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td>
-          <div class="actions-cell">
-            <button class="btn btn-ghost btn-sm" onclick="editCategory('${cat.id}')">✏️ Edit</button>
-            <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="confirmDelete('category','${cat.id}','${escHtml(cat.name)}')">🗑️</button>
-          </div>
-        </td>
-      </tr>
-    `;
+  tbody.innerHTML = categories.map(function(cat) {
+    var count = cat.exercises && cat.exercises[0] ? cat.exercises[0].count : 0;
+    return '<tr>' +
+      '<td><span class="color-dot" style="background:' + escHtml(cat.color || '#4A90D9') + '"></span><strong>' + escHtml(cat.name) + '</strong></td>' +
+      '<td><code style="font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:4px;">' + escHtml(cat.slug) + '</code></td>' +
+      '<td class="text-truncate" style="max-width:200px;">' + escHtml(cat.description || '—') + '</td>' +
+      '<td><strong>' + count + '</strong></td>' +
+      '<td><span class="badge ' + (cat.is_active ? 'badge-active' : 'badge-inactive') + '">' + (cat.is_active ? 'Active' : 'Inactive') + '</span></td>' +
+      '<td><div class="actions-cell">' +
+        '<button class="btn btn-ghost btn-sm" onclick="editCategory(\'' + cat.id + '\')">✏️ Edit</button>' +
+        '<button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="confirmDelete(\'category\',\'' + cat.id + '\',\'' + escHtml(cat.name) + '\')">🗑️</button>' +
+      '</div></td>' +
+      '</tr>';
   }).join('');
 }
 
 function renderExercisesTable() {
-  const tbody = document.getElementById('exercises-table-body');
+  var tbody = document.getElementById('exercises-table-body');
   if (!exercises.length) {
     tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🗣️</div><p>No exercises found. Add your first exercise.</p></div></td></tr>';
     return;
   }
-
-  tbody.innerHTML = exercises.map(ex => {
-    const catName = ex.exercise_categories?.name || '—';
-    const catColor = ex.exercise_categories?.color || '#4A90D9';
-    return `
-      <tr>
-        <td class="text-truncate">${escHtml(ex.text)}</td>
-        <td><span class="color-dot" style="background:${escHtml(catColor)}"></span>${escHtml(catName)}</td>
-        <td><span class="badge badge-${ex.difficulty}">${ex.difficulty}</span></td>
-        <td style="color:var(--text-muted);font-size:13px;">${escHtml(ex.focus || '—')}</td>
-        <td><span class="badge ${ex.is_active ? 'badge-active' : 'badge-inactive'}">${ex.is_active ? 'Active' : 'Inactive'}</span></td>
-        <td>
-          <div class="actions-cell">
-            <button class="btn btn-ghost btn-sm" onclick="editExercise('${ex.id}')">✏️ Edit</button>
-            <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="confirmDelete('exercise','${ex.id}','exercise')">🗑️</button>
-          </div>
-        </td>
-      </tr>
-    `;
+  tbody.innerHTML = exercises.map(function(ex) {
+    var catName = ex.exercise_categories ? ex.exercise_categories.name : '—';
+    var catColor = ex.exercise_categories ? ex.exercise_categories.color : '#4A90D9';
+    return '<tr>' +
+      '<td class="text-truncate">' + escHtml(ex.text) + '</td>' +
+      '<td><span class="color-dot" style="background:' + escHtml(catColor || '#4A90D9') + '"></span>' + escHtml(catName) + '</td>' +
+      '<td><span class="badge badge-' + ex.difficulty + '">' + ex.difficulty + '</span></td>' +
+      '<td style="color:var(--text-muted);font-size:13px;">' + escHtml(ex.focus || '—') + '</td>' +
+      '<td><span class="badge ' + (ex.is_active ? 'badge-active' : 'badge-inactive') + '">' + (ex.is_active ? 'Active' : 'Inactive') + '</span></td>' +
+      '<td><div class="actions-cell">' +
+        '<button class="btn btn-ghost btn-sm" onclick="editExercise(\'' + ex.id + '\')">✏️ Edit</button>' +
+        '<button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="confirmDelete(\'exercise\',\'' + ex.id + '\',\'exercise\')">🗑️</button>' +
+      '</div></td>' +
+      '</tr>';
   }).join('');
 }
 
 function updateCategorySelects() {
-  const filterSel = document.getElementById('filter-category');
-  const exSel = document.getElementById('ex-category');
-
-  const opts = categories.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  var filterSel = document.getElementById('filter-category');
+  var exSel = document.getElementById('ex-category');
+  var opts = categories.map(function(c) {
+    return '<option value="' + c.id + '">' + escHtml(c.name) + '</option>';
+  }).join('');
 
   if (filterSel) {
-    const cur = filterSel.value;
+    var cur = filterSel.value;
     filterSel.innerHTML = '<option value="">All Categories</option>' + opts;
     filterSel.value = cur;
   }
   if (exSel) {
-    const cur = exSel.value;
+    var cur2 = exSel.value;
     exSel.innerHTML = '<option value="">Select category…</option>' + opts;
-    if (cur) exSel.value = cur;
+    if (cur2) exSel.value = cur2;
   }
 }
 
 // ── Dashboard ──
 function updateDashboard() {
-  const total = exercises.length;
-  const active = exercises.filter(e => e.is_active).length;
-  const easy = exercises.filter(e => e.difficulty === 'easy').length;
-  const medium = exercises.filter(e => e.difficulty === 'medium').length;
-  const hard = exercises.filter(e => e.difficulty === 'hard').length;
+  var total = exercises.length;
+  var active = exercises.filter(function(e) { return e.is_active; }).length;
+  var easy = exercises.filter(function(e) { return e.difficulty === 'easy'; }).length;
+  var medium = exercises.filter(function(e) { return e.difficulty === 'medium'; }).length;
+  var hard = exercises.filter(function(e) { return e.difficulty === 'hard'; }).length;
 
   document.getElementById('stat-categories').textContent = categories.length;
   document.getElementById('stat-exercises').textContent = total;
   document.getElementById('stat-active').textContent = active;
-  document.getElementById('stat-difficulty').textContent = `${easy} / ${medium} / ${hard}`;
+  document.getElementById('stat-difficulty').textContent = easy + ' / ' + medium + ' / ' + hard;
 
-  const breakdown = document.getElementById('category-breakdown');
+  var breakdown = document.getElementById('category-breakdown');
   if (!categories.length) {
     breakdown.innerHTML = '<p style="color:var(--text-muted);font-size:14px;">No categories yet.</p>';
     return;
   }
-
-  breakdown.innerHTML = categories.map(cat => {
-    const count = exercises.filter(e => e.category_id === cat.id).length;
-    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-    return `
-      <div style="margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <span style="font-size:14px;font-weight:500;">
-            <span class="color-dot" style="background:${escHtml(cat.color || '#4A90D9')}"></span>
-            ${escHtml(cat.name)}
-          </span>
-          <span style="font-size:13px;color:var(--text-muted);">${count} exercises</span>
-        </div>
-        <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;">
-          <div style="background:${escHtml(cat.color || '#4A90D9')};height:100%;width:${pct}%;border-radius:4px;transition:width 0.4s;"></div>
-        </div>
-      </div>
-    `;
+  breakdown.innerHTML = categories.map(function(cat) {
+    var count = exercises.filter(function(e) { return e.category_id === cat.id; }).length;
+    var pct = total > 0 ? Math.round((count / total) * 100) : 0;
+    return '<div style="margin-bottom:16px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font-size:14px;font-weight:500;"><span class="color-dot" style="background:' + escHtml(cat.color || '#4A90D9') + '"></span>' + escHtml(cat.name) + '</span>' +
+        '<span style="font-size:13px;color:var(--text-muted);">' + count + ' exercises</span>' +
+      '</div>' +
+      '<div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;">' +
+        '<div style="background:' + escHtml(cat.color || '#4A90D9') + ';height:100%;width:' + pct + '%;border-radius:4px;transition:width 0.4s;"></div>' +
+      '</div></div>';
   }).join('');
 }
 
@@ -985,7 +1057,7 @@ function openAddCategoryModal() {
 }
 
 function editCategory(id) {
-  const cat = categories.find(c => c.id === id);
+  var cat = categories.find(function(c) { return c.id === id; });
   if (!cat) return;
   document.getElementById('category-modal-title').textContent = 'Edit Category';
   document.getElementById('cat-id').value = cat.id;
@@ -999,16 +1071,16 @@ function editCategory(id) {
   openModal('category-modal');
 }
 
-async function saveCategory() {
-  const id = document.getElementById('cat-id').value;
-  const name = document.getElementById('cat-name').value.trim();
-  const slug = document.getElementById('cat-slug').value.trim();
+function saveCategory() {
+  var id = document.getElementById('cat-id').value;
+  var name = document.getElementById('cat-name').value.trim();
+  var slug = document.getElementById('cat-slug').value.trim();
 
   if (!name || !slug) { toast('Name and slug are required.', 'error'); return; }
 
-  const payload = {
-    name,
-    slug,
+  var payload = {
+    name: name,
+    slug: slug,
     description: document.getElementById('cat-description').value.trim() || null,
     icon: document.getElementById('cat-icon').value.trim() || 'mic',
     color: document.getElementById('cat-color').value,
@@ -1016,20 +1088,18 @@ async function saveCategory() {
     is_active: document.getElementById('cat-active').checked,
   };
 
-  try {
-    let error;
-    if (id) {
-      ({ error } = await supabase.from('exercise_categories').update(payload).eq('id', id));
-    } else {
-      ({ error } = await supabase.from('exercise_categories').insert(payload));
-    }
-    if (error) throw error;
+  var promise = id
+    ? _sbClient.from('exercise_categories').update(payload).eq('id', id)
+    : _sbClient.from('exercise_categories').insert(payload);
+
+  promise.then(function(result) {
+    if (result.error) throw result.error;
     toast(id ? 'Category updated!' : 'Category added!', 'success');
     closeModal('category-modal');
-    await loadAll();
-  } catch (err) {
+    loadAll();
+  }).catch(function(err) {
     toast('Error: ' + err.message, 'error');
-  }
+  });
 }
 
 // ── Exercise CRUD ──
@@ -1047,7 +1117,7 @@ function openAddExerciseModal() {
 }
 
 function editExercise(id) {
-  const ex = exercises.find(e => e.id === id);
+  var ex = exercises.find(function(e) { return e.id === id; });
   if (!ex) return;
   document.getElementById('exercise-modal-title').textContent = 'Edit Exercise';
   document.getElementById('ex-id').value = ex.id;
@@ -1058,26 +1128,26 @@ function editExercise(id) {
   document.getElementById('ex-order').value = ex.display_order || 0;
   document.getElementById('ex-active').checked = ex.is_active;
   updateCategorySelects();
-  setTimeout(() => {
+  setTimeout(function() {
     document.getElementById('ex-category').value = ex.category_id;
   }, 50);
   openModal('exercise-modal');
 }
 
-async function saveExercise() {
-  const id = document.getElementById('ex-id').value;
-  const text = document.getElementById('ex-text').value.trim();
-  const categoryId = document.getElementById('ex-category').value;
+function saveExercise() {
+  var id = document.getElementById('ex-id').value;
+  var text = document.getElementById('ex-text').value.trim();
+  var categoryId = document.getElementById('ex-category').value;
 
   if (!text) { toast('Exercise text is required.', 'error'); return; }
   if (!categoryId) { toast('Please select a category.', 'error'); return; }
 
-  const tagsRaw = document.getElementById('ex-tags').value.trim();
-  const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+  var tagsRaw = document.getElementById('ex-tags').value.trim();
+  var tags = tagsRaw ? tagsRaw.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
 
-  const payload = {
+  var payload = {
     category_id: categoryId,
-    text,
+    text: text,
     difficulty: document.getElementById('ex-difficulty').value,
     focus: document.getElementById('ex-focus').value.trim() || null,
     tags: tags.length ? tags : null,
@@ -1085,56 +1155,39 @@ async function saveExercise() {
     is_active: document.getElementById('ex-active').checked,
   };
 
-  try {
-    let error;
-    if (id) {
-      ({ error } = await supabase.from('exercises').update(payload).eq('id', id));
-    } else {
-      ({ error } = await supabase.from('exercises').insert(payload));
-    }
-    if (error) throw error;
+  var promise = id
+    ? _sbClient.from('exercises').update(payload).eq('id', id)
+    : _sbClient.from('exercises').insert(payload);
+
+  promise.then(function(result) {
+    if (result.error) throw result.error;
     toast(id ? 'Exercise updated!' : 'Exercise added!', 'success');
     closeModal('exercise-modal');
-    await loadAll();
-  } catch (err) {
+    loadAll();
+  }).catch(function(err) {
     toast('Error: ' + err.message, 'error');
-  }
+  });
 }
 
 // ── Delete ──
 function confirmDelete(type, id, label) {
   document.getElementById('delete-message').textContent =
-    `Are you sure you want to delete "${label}"? This cannot be undone.`;
-  const btn = document.getElementById('delete-confirm-btn');
-  btn.onclick = () => doDelete(type, id);
+    'Are you sure you want to delete "' + label + '"? This cannot be undone.';
+  document.getElementById('delete-confirm-btn').onclick = function() { doDelete(type, id); };
   openModal('delete-modal');
 }
 
-async function doDelete(type, id) {
-  try {
-    const table = type === 'category' ? 'exercise_categories' : 'exercises';
-    const { error } = await supabase.from(table).delete().eq('id', id);
-    if (error) throw error;
-    toast(`${type === 'category' ? 'Category' : 'Exercise'} deleted.`, 'success');
+function doDelete(type, id) {
+  var table = type === 'category' ? 'exercise_categories' : 'exercises';
+  _sbClient.from(table).delete().eq('id', id).then(function(result) {
+    if (result.error) throw result.error;
+    toast((type === 'category' ? 'Category' : 'Exercise') + ' deleted.', 'success');
     closeModal('delete-modal');
-    await loadAll();
-  } catch (err) {
+    loadAll();
+  }).catch(function(err) {
     toast('Delete failed: ' + err.message, 'error');
-  }
+  });
 }
-
-// ── Auto-slug ──
-document.addEventListener('DOMContentLoaded', () => {
-  const nameInput = document.getElementById('cat-name');
-  const slugInput = document.getElementById('cat-slug');
-  if (nameInput && slugInput) {
-    nameInput.addEventListener('input', () => {
-      if (!document.getElementById('cat-id').value) {
-        slugInput.value = nameInput.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-      }
-    });
-  }
-});
 
 // ── Modal Helpers ──
 function openModal(id) {
@@ -1143,20 +1196,16 @@ function openModal(id) {
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
 }
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) overlay.classList.remove('open');
-  });
-});
 
 // ── Toast ──
-function toast(msg, type = 'info') {
-  const container = document.getElementById('toast-container');
-  const el = document.createElement('div');
-  el.className = `toast toast-${type}`;
+function toast(msg, type) {
+  type = type || 'info';
+  var container = document.getElementById('toast-container');
+  var el = document.createElement('div');
+  el.className = 'toast toast-' + type;
   el.textContent = msg;
   container.appendChild(el);
-  setTimeout(() => el.remove(), 3500);
+  setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 3500);
 }
 
 // ── Util ──
@@ -1166,15 +1215,9 @@ function escHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
-
-// Enter key on login
-document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') {
-    doLogin();
-  }
-});
 </script>
 </body>
 </html>
